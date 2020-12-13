@@ -1,0 +1,122 @@
+---
+title: "tl_covid_exercise"
+author: "Katherine Liu"
+date: "12/13/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(tidyverse)
+
+covid_data <- 
+  list.files(pattern = "*.csv") %>% 
+  map_df(~fread(.))
+
+remove = c("Diamond Princess", "District of Columbia", "Grand Princess", "Guam",
+           "Puerto Rico", "American Samoa", "Northern Mariana Islands",
+           "Recovered", "Virgin Islands")
+state_data = covid_data[!covid_data$Province_State %in% remove]
+state_data = select(state_data, -c(Country_Region))
+
+colnames(state_data)[1] = "State"
+colnames(state_data)[2] = "Date"
+colnames(state_data)[4] = "Long"
+
+state_data$Date = as.Date(state_data$Date, "%Y-%m-%d %H:%M:%S", tz = "GMT")
+state_data[59,2] = state_data[58,2]
+
+case_totals = state_data %>%   
+  group_by(Date) %>% 
+  mutate(num_cases = sum(Confirmed))%>% 
+  distinct(Date, num_cases)
+
+ggplot(data = case_totals) +
+  geom_line(mapping = aes(x = Date, y = num_cases)) + 
+  ggtitle("Total Cases in US")
+```
+
+
+```{r}
+state_data %>% 
+  filter(State == "California") %>% 
+  ggplot(mapping = aes(x = Date, y = Confirmed)) +
+  geom_line() +
+  ggtitle("Total CA Cases, over Time")
+```
+
+```{r}
+state_data %>% 
+  filter(State == "California") %>% 
+  mutate(daily = Confirmed - lag(Confirmed)) %>% 
+  ggplot(mapping = aes(x = Date, y = daily)) +
+  geom_line() +
+  geom_vline(xintercept = as.numeric(as.Date("2020-06-12")), linetype=2, col = "green") +
+  geom_vline(xintercept = as.numeric(as.Date("2020-07-13")), linetype=2, col = "red") +
+  geom_vline(xintercept = as.numeric(as.Date("2020-11-16")), linetype=2, col = "red") +
+  geom_vline(xintercept = as.numeric(as.Date("2020-09-22")), linetype=2, col = "green") +
+  ggtitle("Daily Cases in CA")
+
+```
+
+```{r}
+(state_avg = state_data %>% 
+  group_by(State) %>% 
+  mutate(avg_rate = mean(Incident_Rate)) %>% 
+  distinct(State, avg_rate) %>% 
+  arrange(avg_rate)
+ )
+```
+
+```{r}
+state_avg$State = tolower(state_avg$State)
+state_df = map_data("state")
+colnames(state_df)[5] = "State"
+
+
+merge_state <- inner_join(state_df, state_avg, by = "State")
+ggplot() + 
+  geom_polygon( data=merge_state, 
+          aes(x=long, y=lat, group=group, fill = avg_rate)) 
+```
+
+```{r}
+ci = state_data %>%
+  group_by(State) %>%
+  dplyr::summarize(mean_rate = mean(Incident_Rate, na.rm = TRUE),
+            sd_rate = sd(Incident_Rate, na.rm = TRUE),
+            n_rate = n()) %>%
+  mutate(se_rate = sd_rate / sqrt(n_rate),
+         lower_ci_rate = mean_rate - qt(1 - (0.05 / 1225), n_rate - 1) * se_rate,
+         upper_ci_rate = mean_rate + qt(1 - (0.05 / 1225), n_rate - 1) * se_rate)
+
+```
+
+```{r}
+ggplot(ci, mapping = aes(x = reorder(State, mean_rate), y = mean_rate)) + 
+  geom_point() +
+  geom_errorbar(data = ci, aes(ymin = mean_rate - 2*sd_rate, ymax = mean_rate + 2 * sd_rate, color = State)) + 
+  theme(legend.position = "none") +
+  coord_flip()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
